@@ -1,0 +1,41 @@
+name: 'Designesy Score'
+description: 'Score your PR preview deployment against the 40-check Designesy design-contract engine. Posts a sticky comment with the score, grade, and failing checks.'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+inputs:
+  url:
+    description: 'The URL to score (e.g. your PR preview deployment URL). Either this or `url-command` is required.'
+    required: false
+    default: ''
+  url-command:
+    description: 'A shell command whose stdout is the URL to score (e.g. `echo $VERCEL_URL`). Use this when the preview URL is only available at runtime.'
+    required: false
+    default: ''
+  scope:
+    description: 'Scoring scope: contract (strict) or universal (fair, default).'
+    required: false
+    default: 'universal'
+  min-score:
+    description: 'Fail the step (exit 1) if the score is below this number (0-100). Default 0 = disabled.'
+    required: false
+    default: '0'
+  min-grade:
+    description: 'Fail the step (exit 1) if the grade is worse than this letter (A/B/C/D/F). Default empty = disabled.'
+    required: false
+    default: ''
+  format:
+    description: 'Output format: designesy (default), canonical, review, google.'
+    required: false
+    default: 'designesy'
+  fail-on-error:
+    description: 'Fail the step if the scoring engine itself errors (network failure, invalid URL). Set to false to allow the step to pass even on errors.'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'GitHub token for posting PR comments. Defaults to the automatic GITHUB_TOKEN.'
+    required: false
+    default: ''
+runs:
+  using: 'node24'
+  main: 'dist/index.js'

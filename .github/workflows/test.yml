@@ -1,0 +1,69 @@
+name: Verify action
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # Verify the action builds and the bundle is committed
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Verify dist is up to date
+        run: |
+          if ! git diff --exit-code dist/; then
+            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
+            git diff --stat dist/
+            exit 1
+          fi
+
+  # Self-test: score example.com (a known low-scorer) and verify the action
+  # runs without crashing and produces expected outputs
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Score example.com
+        id: score
+        uses: ./
+        with:
+          url: https://example.com
+          fail-on-error: 'false'
+      - name: Verify outputs are set
+        run: |
+          echo "Score: ${{ steps.score.outputs.score }}"
+          echo "Grade: ${{ steps.score.outputs.grade }}"
+          echo "Pass: ${{ steps.score.outputs.pass }}"
+          echo "Fail: ${{ steps.score.outputs.fail }}"
+          if [ -z "${{ steps.score.outputs.score }}" ]; then
+            echo "::error::score output was not set"
+            exit 1
+          fi
+          if [ -z "${{ steps.score.outputs.grade }}" ]; then
+            echo "::error::grade output was not set"
+            exit 1
+          fi
+
+  # Score designesy.org — should be an A
+  score-designesy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Score designesy.org
+        id: score
+        uses: ./
+        with:
+          url: https://www.designesy.org
+          fail-on-error: 'false'
+      - name: Report
+        run: |
+          echo "Designesy.org score: ${{ steps.score.outputs.score }} (${{ steps.score.outputs.grade }})"

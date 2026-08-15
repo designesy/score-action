@@ -1,0 +1,27 @@
+{
+  "name": "designesy-score-action",
+  "version": "1.0.0",
+  "description": "GitHub Action: score your PR preview deployment against the 40-check Designesy design-contract engine.",
+  "license": "MIT",
+  "author": "Designesy",
+  "homepage": "https://www.designesy.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/designesy/score-action.git"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "@tsconfig/node24": "^24.0.0",
+    "@types/node": "^24.0.0",
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.7.0"
+  }
+}
