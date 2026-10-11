@@ -1,5 +1,5 @@
 name: 'Designesy Score'
-description: 'Score your PR preview deployment against the 40-check Designesy design-contract engine. Posts a sticky comment with the score, grade, and failing checks.'
+description: 'Score your PR preview deployment against the 44-check Designesy design-contract engine. Posts a sticky comment with the score, grade, and failing checks.'
 branding:
   icon: 'check-circle'
   color: 'blue'
@@ -25,7 +25,7 @@ inputs:
     required: false
     default: ''
   format:
-    description: 'Output format: designesy (default), canonical, review, google.'
+    description: 'Engine output format: designesy (default), canonical, review, google. Only designesy and canonical carry per-check counts; for the other formats the action reads the designesy result.'
     required: false
     default: 'designesy'
   fail-on-error:
@@ -33,9 +33,28 @@ inputs:
     required: false
     default: 'true'
   github-token:
-    description: 'GitHub token for posting PR comments. Defaults to the automatic GITHUB_TOKEN.'
+    description: 'GitHub token for posting PR comments. Defaults to the workflow token (github.token), which needs `pull-requests: write`. A failed comment post is a warning and never fails the step.'
     required: false
-    default: ''
+    default: ${{ github.token }}
+outputs:
+  score:
+    description: 'Numeric score (0-100).'
+  grade:
+    description: 'Letter grade (A-F).'
+  pass:
+    description: 'Number of passing checks.'
+  warn:
+    description: 'Number of warning checks.'
+  fail:
+    description: 'Number of failing checks.'
+  skip:
+    description: 'Number of skipped checks.'
+  manual:
+    description: 'Number of checks that need a manual or browser-trace review.'
+  total:
+    description: 'Total checks the engine ran, as reported by the engine.'
+  contract-version:
+    description: 'Design-contract version the engine scored against, as reported by the engine.'
 runs:
   using: 'node24'
   main: 'dist/index.js'

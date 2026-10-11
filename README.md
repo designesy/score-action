@@ -1,13 +1,13 @@
 # Designesy Score Action
 
-Score your PR preview deployment against the **40-check Designesy design-contract engine** and post a sticky comment with the result.
+Score your PR preview deployment against the **44-check Designesy design-contract engine** and post a sticky comment with the result.
 
 [![Verify action](https://github.com/designesy/score-action/actions/workflows/test.yml/badge.svg)](https://github.com/designesy/score-action/actions/workflows/test.yml)
 
 ## How it works
 
 1. Your CI builds a preview deployment (Vercel, Netlify, etc.) and produces a URL.
-2. This action runs [`designesy-score`](https://www.npmjs.com/package/designesy-score) against that URL — 40 checks covering tokens, typography, motion, accessibility, color discipline, and anti-slop detection.
+2. This action runs [`@designesy/score`](https://www.npmjs.com/package/@designesy/score) against that URL — 44 checks across 14 categories, from tokens, typography cadence, and motion to accessibility, semantics, and copywriting, plus anti-slop deductions and originality lifts.
 3. A sticky comment is posted (or updated) on the PR with the score, grade, and any failing checks.
 4. Optional quality gates fail the build if the score drops below your threshold.
 
@@ -20,6 +20,9 @@ name: Designesy Score
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write   # lets the workflow token post the score comment
 
 jobs:
   score:
@@ -98,9 +101,9 @@ steps:
 | `scope` | `universal` | Scoring scope: `contract` (strict, for Designesy-owned sites) or `universal` (fair, for any site). |
 | `min-score` | `0` | Fail the step if score is below this number (0–100). `0` = disabled. |
 | `min-grade` | `''` | Fail the step if grade is worse than this letter (A/B/C/D/F). Empty = disabled. |
-| `format` | `designesy` | Output format: `designesy`, `canonical`, `review`, or `google`. |
+| `format` | `designesy` | Engine output format: `designesy`, `canonical`, `review`, or `google`. Only `designesy` and `canonical` carry per-check counts; for the other formats the action reads the `designesy` result for its outputs and comment. |
 | `fail-on-error` | `true` | Fail the step if the scoring engine itself errors (network failure, invalid URL). Set to `false` to pass even on errors. |
-| `github-token` | `GITHUB_TOKEN` | GitHub token for posting PR comments. Defaults to the automatic token. |
+| `github-token` | `${{ github.token }}` | GitHub token for posting PR comments. Defaults to the workflow's automatic token, which needs `permissions: pull-requests: write`. A failed comment post is logged as a warning and never fails the step. |
 
 ## Outputs
 
@@ -112,20 +115,34 @@ steps:
 | `warn` | Number of warning checks |
 | `fail` | Number of failing checks |
 | `skip` | Number of skipped checks |
-| `total` | Total checks run |
+| `manual` | Number of checks that need a manual or browser-trace review |
+| `total` | Total checks the engine ran, as the engine reports it |
+| `contract-version` | Design-contract version the engine scored against, as the engine reports it |
 
-## The 40 checks
+`pass + warn + fail + skip + manual = total`. The action always runs the latest published engine, so `total` and `contract-version` follow the engine rather than a number fixed in this action.
 
-The engine evaluates design-contract compliance across 8 categories:
+## The 44 checks
 
-- **Tokens** (8) — design tokens present, structured, DTCG-compliant
-- **Typography** (6) — fluid type, hierarchy, line-height discipline
-- **Motion** (5) — duration tokens, easing, reduced-motion support
-- **Accessibility** (5) — WCAG 2.2 contrast, focus states, alt text
-- **Color** (5) — OKLCH usage, semantic families, dark-mode coherence
-- **Composition** (4) — grid system, spacing scale, container queries
-- **Anti-slop** (4) — AI-generated UI drift detection, lookalike test
-- **Originality** (3) — convergence scoring, reference-tier distance
+The engine evaluates design-contract compliance across 14 categories (counts as of `@designesy/score` 0.7.1):
+
+| Category | Checks |
+|----------|--------|
+| Tokens | 2 |
+| Responsive | 1 |
+| Interaction | 1 |
+| Poise | 3 |
+| Motion | 5 |
+| Accessibility | 7 |
+| Identity | 2 |
+| Takt | 2 |
+| Cadence (typography) | 12 |
+| Performance | 1 |
+| Semantic | 2 |
+| Security | 1 |
+| Copywriting | 4 |
+| Spec | 1 |
+
+On top of the weighted checks, the score carries anti-slop deductions and originality lifts, and an accessibility floor and hard-fail ceiling can cap the grade.
 
 See the [full check documentation](https://www.designesy.org/score) on designesy.org.
 
@@ -143,7 +160,7 @@ Both gates are evaluated independently. If either fails, the step exits with cod
 
 ## Fork PR limitations
 
-For pull requests from forks, `GITHUB_TOKEN` is read-only and cannot post comments. The action handles this gracefully — it logs a warning and still sets outputs and runs quality gates. To enable comments on fork PRs, use a Personal Access Token via a secret:
+For pull requests from forks, the workflow token is read-only and cannot post comments. The action handles this gracefully: it logs a warning with the reason and still sets outputs and runs quality gates, so the step's result depends only on `min-score`, `min-grade`, and `fail-on-error`. To enable comments on fork PRs, use a Personal Access Token via a secret:
 
 ```yaml
 with:

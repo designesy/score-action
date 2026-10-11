@@ -1,7 +1,7 @@
 {
   "name": "designesy-score-action",
-  "version": "1.0.0",
-  "description": "GitHub Action: score your PR preview deployment against the 40-check Designesy design-contract engine.",
+  "version": "1.1.0",
+  "description": "GitHub Action: score your PR preview deployment against the 44-check Designesy design-contract engine.",
   "license": "MIT",
   "author": "Designesy",
   "homepage": "https://www.designesy.org",
