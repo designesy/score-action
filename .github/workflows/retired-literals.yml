@@ -1,0 +1,40 @@
+name: Retired literals
+
+# No retired Designesy brand colour ships in this action (brand ledger D44,
+# D46). The list is not kept in this repo: retired-literals.lock.json pins the
+# canonical file in LE-VAI/designesy-org by commit, and the gate fetches it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Weekly, so a change to the upstream list turns this red even when nothing
+  # here changes.
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retired-literals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # src/, action.yml, README.md and dist/ (not dist/*.map) against the
+      # list at the pinned commit. Fails if the list cannot be fetched.
+      - name: Retired literals
+        run: node scripts/check-retired-literals.mjs
+
+      # The pinned list must equal the upstream default branch's, so the pin
+      # cannot fall behind silently.
+      - name: Pinned list matches upstream
+        if: always()
+        run: node scripts/check-retired-literals.mjs --upstream

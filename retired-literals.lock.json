@@ -1,0 +1,17 @@
+{
+  "$comment": [
+    "Where the retired-literal list comes from. scripts/check-retired-literals.mjs fetches `path` from `repo` at",
+    "`commit` (a full SHA, so the list it reads is exactly the reviewed one) and never keeps a copy here.",
+    "`npm run check-retired-literals -- --upstream` compares that list with the one on the upstream default branch",
+    "and fails when they differ, so a change upstream turns this repo's CI red instead of lagging silently.",
+    "Move `commit` to the upstream commit that changed the list, in its own pull request.",
+    "pendingUpstreamMerge: true only while the pinned commit is the head of an open upstream pull request, so the",
+    "file is not on the default branch yet; the upstream check then warns instead of failing. Remove it when the pin",
+    "moves to the merge commit."
+  ],
+  "repo": "LE-VAI/designesy-org",
+  "commit": "d7affd7f27b3ec5c28e01db07e7cb8c33b407cd4",
+  "path": "apps/site/scripts/retired-literals.json",
+  "defaultBranch": "main",
+  "pendingUpstreamMerge": true
+}
