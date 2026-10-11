@@ -29938,6 +29938,9 @@ function wrappy (fn, cb) {
  *   min-score     — fail if score < N (default: 0 = disabled)
  *   min-grade     — fail if grade worse than letter (default: disabled)
  *   format        — designesy | canonical | review | google (default: designesy)
+ *                   Only designesy and canonical carry per-status counts;
+ *                   for the other formats the action reads the engine's
+ *                   designesy JSON to set outputs and the comment.
  *   fail-on-error — fail step if engine errors (default: true)
  *   github-token  — GitHub token for PR comments (default: GITHUB_TOKEN)
  */
@@ -29979,6 +29982,10 @@ const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const node_child_process_1 = __nccwpck_require__(1421);
 const GRADE_RANK = { A: 5, B: 4, C: 3, D: 2, F: 1 };
+/** The scoring engine package run through npx. */
+const ENGINE_PACKAGE = '@designesy/score@latest';
+/** Emission formats whose JSON carries structured per-check results. */
+const STRUCTURED_FORMATS = new Set(['designesy', 'canonical']);
 /**
  * Resolve the URL to score — either from the `url` input or by running
  * `url-command` and capturing stdout.
@@ -30007,21 +30014,44 @@ function resolveUrl() {
     process.exit(1);
 }
 /**
- * Run the designesy-score engine via npx and parse the JSON output.
+ * The engine's own reason for a failed run: the first non-empty stderr line,
+ * without terminal colour codes.
+ */
+function engineErrorLine(err) {
+    const stderr = err?.stderr;
+    if (typeof stderr !== 'string')
+        return '';
+    return (stderr
+        .replace(/\u001b\[[0-9;]*m/g, '')
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l && !l.startsWith('npm warn')) ?? '');
+}
+/**
+ * Run the @designesy/score engine via npx and parse the JSON output.
+ *
+ * The check total, per-status counts and contract version all come from the
+ * engine's own output; nothing about the engine's size is hard-coded here.
  */
 function runScore(url, scope, format) {
+    // The other formats emit prose / annotation shapes with no per-status
+    // counts, so the action reads the designesy shape for those.
+    const engineFormat = STRUCTURED_FORMATS.has(format) ? format : 'designesy';
+    if (engineFormat !== format) {
+        core.info(`format=${format} has no per-check counts; reading the designesy JSON for outputs and the comment.`);
+    }
     const npxArgs = [
         '--yes',
-        'designesy-score@latest',
+        ENGINE_PACKAGE,
         url,
         '--scope',
         scope,
         '--format',
-        format,
+        engineFormat,
         '--json',
         '--quiet',
     ];
-    core.info(`Scoring ${url} (scope=${scope}, format=${format})…`);
+    core.info(`Scoring ${url} with ${ENGINE_PACKAGE} (scope=${scope}, format=${engineFormat})…`);
     try {
         const stdout = (0, node_child_process_1.execFileSync)('npx', npxArgs, {
             encoding: 'utf8',
@@ -30029,16 +30059,21 @@ function runScore(url, scope, format) {
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         const parsed = JSON.parse(stdout);
-        // Canonical format nests score under summary
-        if (format === 'canonical') {
+        // Canonical format nests the score under summary and the checks under
+        // findings; the contract version is the tool version.
+        if (engineFormat === 'canonical') {
+            const counts = parsed.summary?.countsByStatus ?? {};
             return {
                 score: parsed.summary?.score ?? 0,
                 grade: parsed.summary?.grade ?? 'F',
-                pass: parsed.summary?.countsByStatus?.pass ?? 0,
-                warn: parsed.summary?.countsByStatus?.warn ?? 0,
-                fail: parsed.summary?.countsByStatus?.fail ?? 0,
-                skip: parsed.summary?.countsByStatus?.skip ?? 0,
-                total: parsed.summary?.total ?? 40,
+                pass: counts.pass ?? 0,
+                warn: counts.warn ?? 0,
+                fail: counts.fail ?? 0,
+                skip: counts.skip ?? 0,
+                manual: counts.manual ?? 0,
+                total: parsed.summary?.total ?? parsed.findings?.length ?? 0,
+                contractVersion: parsed.tool?.version,
+                a11yFloorApplied: parsed.summary?.a11yFloorApplied,
                 checks: parsed.findings?.map((f) => ({
                     id: f.id,
                     item: f.item,
@@ -30057,7 +30092,9 @@ function runScore(url, scope, format) {
             warn: parsed.warn ?? 0,
             fail: parsed.fail ?? 0,
             skip: parsed.skip ?? 0,
-            total: parsed.total ?? 40,
+            manual: parsed.manual ?? 0,
+            total: parsed.total ?? parsed.checks?.length ?? 0,
+            contractVersion: parsed.contractVersion,
             checks: parsed.checks,
             a11yFloorApplied: parsed.a11yFloorApplied,
             hardFailCeilingApplied: parsed.hardFailCeilingApplied,
@@ -30074,14 +30111,17 @@ function runScore(url, scope, format) {
             process.exit(1);
         }
         core.warning(`Scoring failed (fail-on-error=false): ${msg}`);
+        // No engine output, so no check total to report: every count is 0.
         return {
             score: 0,
             grade: 'F',
             pass: 0,
             warn: 0,
             fail: 0,
-            skip: 40,
-            total: 40,
+            skip: 0,
+            manual: 0,
+            total: 0,
+            error: engineErrorLine(err) || msg.split('\n')[0],
             checks: [],
         };
     }
@@ -30108,7 +30148,13 @@ function buildComment(url, result) {
     lines.push(`## ${gradeEmoji[result.grade] || '⚪'} Designesy Score: ${result.score} (${result.grade})`);
     lines.push('');
     lines.push(`**URL:** ${url}`);
-    lines.push(`**Checks:** ${result.pass} pass · ${result.warn} warn · ${result.fail} fail · ${result.skip} skip _(of ${result.total})_`);
+    if (result.error) {
+        lines.push('');
+        lines.push(`> **Scoring engine error:** ${result.error}`);
+    }
+    else {
+        lines.push(`**Checks:** ${result.pass} pass · ${result.warn} warn · ${result.fail} fail · ${result.skip} skip · ${result.manual} manual _(of ${result.total})_`);
+    }
     if (result.a11yFloorApplied) {
         lines.push('');
         lines.push('> ⚡️ **a11y floor applied** — score capped at C due to accessibility failures');
@@ -30140,7 +30186,14 @@ function buildComment(url, result) {
     }
     lines.push('');
     lines.push('---');
-    lines.push('_Powered by [Designesy](https://www.designesy.org) · 40-check design-contract verification_');
+    const engineFacts = [
+        result.total > 0 ? `${result.total}-check` : '',
+        'design-contract verification',
+        result.contractVersion ? `· contract ${result.contractVersion}` : '',
+    ]
+        .filter(Boolean)
+        .join(' ');
+    lines.push(`_Powered by [Designesy](https://www.designesy.org) · ${engineFacts}_`);
     return lines.join('\n');
 }
 /**
@@ -30209,9 +30262,12 @@ async function main() {
     core.setOutput('warn', result.warn.toString());
     core.setOutput('fail', result.fail.toString());
     core.setOutput('skip', result.skip.toString());
+    core.setOutput('manual', result.manual.toString());
     core.setOutput('total', result.total.toString());
+    core.setOutput('contract-version', result.contractVersion ?? '');
     // Log summary
-    core.info(`Score: ${result.score} (${result.grade}) — ${result.pass} pass, ${result.warn} warn, ${result.fail} fail`);
+    core.info(`Score: ${result.score} (${result.grade}) — ${result.pass} pass, ${result.warn} warn, ${result.fail} fail, ${result.skip} skip, ${result.manual} manual of ${result.total} checks` +
+        (result.contractVersion ? ` (contract ${result.contractVersion})` : ''));
     // Post PR comment
     await postComment(buildComment(url, result));
     // Quality gate check
