@@ -33,9 +33,9 @@ inputs:
     required: false
     default: 'true'
   github-token:
-    description: 'GitHub token for posting PR comments. Defaults to the automatic GITHUB_TOKEN.'
+    description: 'GitHub token for posting PR comments. Defaults to the workflow token (github.token), which needs `pull-requests: write`. A failed comment post is a warning and never fails the step.'
     required: false
-    default: ''
+    default: ${{ github.token }}
 outputs:
   score:
     description: 'Numeric score (0-100).'

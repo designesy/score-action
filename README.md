@@ -21,6 +21,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  pull-requests: write   # lets the workflow token post the score comment
+
 jobs:
   score:
     runs-on: ubuntu-latest
@@ -100,7 +103,7 @@ steps:
 | `min-grade` | `''` | Fail the step if grade is worse than this letter (A/B/C/D/F). Empty = disabled. |
 | `format` | `designesy` | Engine output format: `designesy`, `canonical`, `review`, or `google`. Only `designesy` and `canonical` carry per-check counts; for the other formats the action reads the `designesy` result for its outputs and comment. |
 | `fail-on-error` | `true` | Fail the step if the scoring engine itself errors (network failure, invalid URL). Set to `false` to pass even on errors. |
-| `github-token` | `GITHUB_TOKEN` | GitHub token for posting PR comments. Defaults to the automatic token. |
+| `github-token` | `${{ github.token }}` | GitHub token for posting PR comments. Defaults to the workflow's automatic token, which needs `permissions: pull-requests: write`. A failed comment post is logged as a warning and never fails the step. |
 
 ## Outputs
 
@@ -157,7 +160,7 @@ Both gates are evaluated independently. If either fails, the step exits with cod
 
 ## Fork PR limitations
 
-For pull requests from forks, `GITHUB_TOKEN` is read-only and cannot post comments. The action handles this gracefully — it logs a warning and still sets outputs and runs quality gates. To enable comments on fork PRs, use a Personal Access Token via a secret:
+For pull requests from forks, the workflow token is read-only and cannot post comments. The action handles this gracefully: it logs a warning with the reason and still sets outputs and runs quality gates, so the step's result depends only on `min-score`, `min-grade`, and `fail-on-error`. To enable comments on fork PRs, use a Personal Access Token via a secret:
 
 ```yaml
 with:

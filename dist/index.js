@@ -30199,24 +30199,28 @@ function buildComment(url, result) {
 /**
  * Post or update a sticky PR comment using the GitHub API.
  * Uses a hidden comment-tag header to find and update the same comment.
+ *
+ * Never throws: a comment that cannot be posted is a warning, so the step's
+ * result depends only on the score gates (min-score, min-grade,
+ * fail-on-error).
  */
 async function postComment(body) {
-    const ctx = github.context;
-    if (!ctx.payload.pull_request) {
-        core.info('Not a pull request — skipping comment.');
-        return;
-    }
-    const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
-    if (!token) {
-        core.warning('No GITHUB_TOKEN available — skipping comment.');
-        return;
-    }
-    const prNumber = ctx.payload.pull_request.number;
-    const repo = ctx.repo;
-    const octokit = github.getOctokit(token);
-    const COMMENT_TAG = '<!-- designesy-score-action -->';
-    const commentBody = `${COMMENT_TAG}\n${body}`;
     try {
+        const ctx = github.context;
+        if (!ctx.payload.pull_request) {
+            core.info('Not a pull request — skipping comment.');
+            return;
+        }
+        const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
+        if (!token) {
+            core.warning('No GitHub token available — skipping comment. The github-token input defaults to the workflow token; pass one explicitly if it was overridden with an empty value.');
+            return;
+        }
+        const prNumber = ctx.payload.pull_request.number;
+        const repo = ctx.repo;
+        const octokit = github.getOctokit(token);
+        const COMMENT_TAG = '<!-- designesy-score-action -->';
+        const commentBody = `${COMMENT_TAG}\n${body}`;
         const { data: comments } = await octokit.rest.issues.listComments({
             ...repo,
             issue_number: prNumber,
@@ -30240,7 +30244,8 @@ async function postComment(body) {
         }
     }
     catch (err) {
-        core.warning(`Failed to post comment: ${err instanceof Error ? err.message : String(err)}`);
+        const status = err?.status;
+        core.warning(`Failed to post the PR comment${typeof status === 'number' ? ` (HTTP ${status})` : ''}: ${err instanceof Error ? err.message : String(err)}. The score, outputs and gates are unaffected. To post comments, grant the workflow token \`permissions: pull-requests: write\`; pull requests from forks get a read-only token, so comments on them need a token with write access passed as github-token.`);
     }
 }
 /**
