@@ -10,8 +10,7 @@
     "moves to the merge commit."
   ],
   "repo": "LE-VAI/designesy-org",
-  "commit": "d7affd7f27b3ec5c28e01db07e7cb8c33b407cd4",
+  "commit": "8b70612d7e1dcf6c0755e8384e3c7d07d86edf48",
   "path": "apps/site/scripts/retired-literals.json",
-  "defaultBranch": "main",
-  "pendingUpstreamMerge": true
+  "defaultBranch": "main"
 }
