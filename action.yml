@@ -36,6 +36,10 @@ inputs:
     description: 'GitHub token for posting PR comments. Defaults to the workflow token (github.token), which needs `pull-requests: write`. A failed comment post is a warning and never fails the step.'
     required: false
     default: ${{ github.token }}
+  engine-version:
+    description: "Version of @designesy/score to run: 'latest' (default) or an exact version such as 0.7.2. Pin to keep a CI gate stable across engine releases."
+    required: false
+    default: 'latest'
 outputs:
   score:
     description: 'Numeric score (0-100).'
@@ -55,6 +59,8 @@ outputs:
     description: 'Total checks the engine ran, as reported by the engine.'
   contract-version:
     description: 'Design-contract version the engine scored against, as reported by the engine.'
+  engine-version:
+    description: "Version of @designesy/score that ran. With engine-version: latest this is the exact version the registry resolved, or 'latest' if that lookup failed."
 runs:
   using: 'node24'
   main: 'dist/index.js'

@@ -29943,6 +29943,9 @@ function wrappy (fn, cb) {
  *                   designesy JSON to set outputs and the comment.
  *   fail-on-error — fail step if engine errors (default: true)
  *   github-token  — GitHub token for PR comments (default: GITHUB_TOKEN)
+ *   engine-version — @designesy/score to run: latest (default) or an exact
+ *                   x.y.z. Anything else fails the step before any command
+ *                   runs, url-command included.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -29982,10 +29985,49 @@ const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const node_child_process_1 = __nccwpck_require__(1421);
 const GRADE_RANK = { A: 5, B: 4, C: 3, D: 2, F: 1 };
-/** The scoring engine package run through npx. */
-const ENGINE_PACKAGE = '@designesy/score@latest';
+/** The scoring engine package, run through npx at the requested version. */
+const ENGINE_NAME = '@designesy/score';
+/**
+ * The engine-version values the action accepts: the `latest` dist-tag or one
+ * exact x.y.z version. Ranges, other tags and anything else are rejected.
+ */
+const ENGINE_VERSION_INPUT = /^(latest|\d+\.\d+\.\d+)$/;
+/** A version as the registry reports it: x.y.z, optionally a prerelease. */
+const REGISTRY_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 /** Emission formats whose JSON carries structured per-check results. */
 const STRUCTURED_FORMATS = new Set(['designesy', 'canonical']);
+/**
+ * Read and validate the `engine-version` input. An invalid value fails the
+ * step here, before url-command or the engine runs.
+ */
+function readEngineVersion() {
+    const requested = core.getInput('engine-version') || 'latest';
+    if (!ENGINE_VERSION_INPUT.test(requested)) {
+        core.setFailed(`engine-version must be 'latest' or an exact version such as 0.7.2; got ${JSON.stringify(requested)}. Nothing was run.`);
+        process.exit(1);
+    }
+    return requested;
+}
+/**
+ * The engine version to run. An exact version is used as given. `latest` is
+ * looked up in the registry once and the run is pinned to the answer, so the
+ * version reported is the version that scored. If the lookup fails, the run
+ * uses `latest` unresolved, as the action did before this input existed.
+ */
+function resolveEngineVersion(requested) {
+    if (requested !== 'latest')
+        return requested;
+    try {
+        const version = (0, node_child_process_1.execFileSync)('npm', ['view', `${ENGINE_NAME}@latest`, 'version'], { encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        if (REGISTRY_VERSION.test(version))
+            return version;
+        core.warning(`The registry did not return a version for ${ENGINE_NAME}@latest; running it unresolved.`);
+    }
+    catch (err) {
+        core.warning(`Could not look up ${ENGINE_NAME}@latest (${engineErrorLine(err) || (err instanceof Error ? err.message : String(err)).split('\n')[0]}); running it unresolved.`);
+    }
+    return 'latest';
+}
 /**
  * Resolve the URL to score — either from the `url` input or by running
  * `url-command` and capturing stdout.
@@ -30033,16 +30075,19 @@ function engineErrorLine(err) {
  * The check total, per-status counts and contract version all come from the
  * engine's own output; nothing about the engine's size is hard-coded here.
  */
-function runScore(url, scope, format) {
+function runScore(url, scope, format, engineVersion) {
     // The other formats emit prose / annotation shapes with no per-status
     // counts, so the action reads the designesy shape for those.
     const engineFormat = STRUCTURED_FORMATS.has(format) ? format : 'designesy';
     if (engineFormat !== format) {
         core.info(`format=${format} has no per-check counts; reading the designesy JSON for outputs and the comment.`);
     }
+    // engineVersion is 'latest' or a validated x.y.z, and the arguments go to
+    // npx as an array with no shell.
+    const enginePackage = `${ENGINE_NAME}@${engineVersion}`;
     const npxArgs = [
         '--yes',
-        ENGINE_PACKAGE,
+        enginePackage,
         url,
         '--scope',
         scope,
@@ -30051,7 +30096,7 @@ function runScore(url, scope, format) {
         '--json',
         '--quiet',
     ];
-    core.info(`Scoring ${url} with ${ENGINE_PACKAGE} (scope=${scope}, format=${engineFormat})…`);
+    core.info(`Scoring ${url} with ${enginePackage} (scope=${scope}, format=${engineFormat})…`);
     try {
         const stdout = (0, node_child_process_1.execFileSync)('npx', npxArgs, {
             encoding: 'utf8',
@@ -30129,7 +30174,7 @@ function runScore(url, scope, format) {
 /**
  * Build the markdown comment body from the score result.
  */
-function buildComment(url, result) {
+function buildComment(url, result, engineVersion) {
     const lines = [];
     const gradeEmoji = {
         A: '🟢',
@@ -30190,6 +30235,7 @@ function buildComment(url, result) {
         result.total > 0 ? `${result.total}-check` : '',
         'design-contract verification',
         result.contractVersion ? `· contract ${result.contractVersion}` : '',
+        `· ${ENGINE_NAME} ${engineVersion}`,
     ]
         .filter(Boolean)
         .join(' ');
@@ -30252,6 +30298,9 @@ async function postComment(body) {
  * Main entry point.
  */
 async function main() {
+    // First, so an invalid engine-version stops the step before url-command or
+    // the engine runs.
+    const requestedEngine = readEngineVersion();
     const url = resolveUrl();
     const scope = core.getInput('scope') || 'universal';
     const format = core.getInput('format') || 'designesy';
@@ -30259,7 +30308,8 @@ async function main() {
     const minGrade = (core.getInput('min-grade') || '')
         .toUpperCase()
         .charAt(0);
-    const result = runScore(url, scope, format);
+    const engineVersion = resolveEngineVersion(requestedEngine);
+    const result = runScore(url, scope, format, engineVersion);
     // Set outputs for downstream steps
     core.setOutput('score', result.score.toString());
     core.setOutput('grade', result.grade);
@@ -30270,11 +30320,13 @@ async function main() {
     core.setOutput('manual', result.manual.toString());
     core.setOutput('total', result.total.toString());
     core.setOutput('contract-version', result.contractVersion ?? '');
+    core.setOutput('engine-version', engineVersion);
     // Log summary
-    core.info(`Score: ${result.score} (${result.grade}) — ${result.pass} pass, ${result.warn} warn, ${result.fail} fail, ${result.skip} skip, ${result.manual} manual of ${result.total} checks` +
-        (result.contractVersion ? ` (contract ${result.contractVersion})` : ''));
+    core.info(`Score: ${result.score} (${result.grade}) — ${result.pass} pass, ${result.warn} warn, ${result.fail} fail, ${result.skip} skip, ${result.manual} manual of ${result.total} checks (` +
+        (result.contractVersion ? `contract ${result.contractVersion}, ` : '') +
+        `${ENGINE_NAME} ${engineVersion})`);
     // Post PR comment
-    await postComment(buildComment(url, result));
+    await postComment(buildComment(url, result, engineVersion));
     // Quality gate check
     if (minScore > 0 && result.score < minScore) {
         core.setFailed(`Quality gate failed: score ${result.score} is below the ${minScore} floor.`);
