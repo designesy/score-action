@@ -52,6 +52,73 @@ jobs:
             echo "::error::grade output was not set"
             exit 1
           fi
+      - name: Verify latest resolved to an exact engine version
+        env:
+          ENGINE_VERSION: ${{ steps.score.outputs.engine-version }}
+        run: |
+          echo "Engine: $ENGINE_VERSION"
+          if ! printf '%s' "$ENGINE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::engine-version output is '$ENGINE_VERSION', not an exact version"
+            exit 1
+          fi
+
+  # Self-test: a pinned engine runs exactly that version
+  self-test-pinned:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Score example.com on engine 0.7.2
+        id: score
+        uses: ./
+        with:
+          url: https://example.com
+          engine-version: '0.7.2'
+          fail-on-error: 'false'
+      - name: Verify the pinned version ran
+        env:
+          ENGINE_VERSION: ${{ steps.score.outputs.engine-version }}
+          SCORE: ${{ steps.score.outputs.score }}
+        run: |
+          echo "Engine: $ENGINE_VERSION  Score: $SCORE"
+          if [ "$ENGINE_VERSION" != "0.7.2" ]; then
+            echo "::error::engine-version output is '$ENGINE_VERSION', expected 0.7.2"
+            exit 1
+          fi
+          if [ -z "$SCORE" ]; then
+            echo "::error::score output was not set"
+            exit 1
+          fi
+
+  # Self-test: an engine-version that is not 'latest' or x.y.z fails the step
+  # before anything runs, and is never handed to a shell
+  self-test-invalid-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Score with an invalid engine-version
+        id: score
+        continue-on-error: true
+        uses: ./
+        with:
+          url: https://example.com
+          engine-version: '0.7.2; touch /tmp/engine-version-injected'
+      - name: Verify the step failed and nothing ran
+        env:
+          OUTCOME: ${{ steps.score.outcome }}
+          SCORE: ${{ steps.score.outputs.score }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::an invalid engine-version did not fail the step (outcome: $OUTCOME)"
+            exit 1
+          fi
+          if [ -n "$SCORE" ]; then
+            echo "::error::score output was set, so the engine ran"
+            exit 1
+          fi
+          if [ -e /tmp/engine-version-injected ]; then
+            echo "::error::the engine-version value reached a shell"
+            exit 1
+          fi
 
   # Score designesy.org — should be an A
   score-designesy:

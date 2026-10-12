@@ -104,6 +104,7 @@ steps:
 | `format` | `designesy` | Engine output format: `designesy`, `canonical`, `review`, or `google`. Only `designesy` and `canonical` carry per-check counts; for the other formats the action reads the `designesy` result for its outputs and comment. |
 | `fail-on-error` | `true` | Fail the step if the scoring engine itself errors (network failure, invalid URL). Set to `false` to pass even on errors. |
 | `github-token` | `${{ github.token }}` | GitHub token for posting PR comments. Defaults to the workflow's automatic token, which needs `permissions: pull-requests: write`. A failed comment post is logged as a warning and never fails the step. |
+| `engine-version` | `latest` | Version of `@designesy/score` to run: `latest` or an exact version such as `0.7.2`. Pin to keep a CI gate stable across engine releases. Any other value fails the step before anything runs. See [Pinning the engine](#pinning-the-engine). |
 
 ## Outputs
 
@@ -118,8 +119,9 @@ steps:
 | `manual` | Number of checks that need a manual or browser-trace review |
 | `total` | Total checks the engine ran, as the engine reports it |
 | `contract-version` | Design-contract version the engine scored against, as the engine reports it |
+| `engine-version` | Version of `@designesy/score` that ran. With `engine-version: latest` this is the exact version the registry resolved (`latest` only if that lookup failed) |
 
-`pass + warn + fail + skip + manual = total`. The action always runs the latest published engine, so `total` and `contract-version` follow the engine rather than a number fixed in this action.
+`pass + warn + fail + skip + manual = total`. By default the action runs the latest published engine, so `total` and `contract-version` follow the engine rather than a number fixed in this action.
 
 ## The 44 checks
 
@@ -157,6 +159,21 @@ with:
 ```
 
 Both gates are evaluated independently. If either fails, the step exits with code 1.
+
+## Pinning the engine
+
+By default the action runs the latest published `@designesy/score`, so a new engine release can change a score without any change on your side. To keep a gate stable, pin an exact engine version (requires `designesy/score-action` v1.2.0 or later; `@v1` includes it):
+
+```yaml
+- name: Score preview deployment
+  uses: designesy/score-action@v1
+  with:
+    url: https://my-app.vercel.app
+    min-grade: A
+    engine-version: 0.7.2
+```
+
+Package 0.8.0 (engine 1.3.0) caps the score at 89.9, a B, while any check FAILs, so a `min-grade: A` or `min-score: 90` gate that passes on 0.7.2 can fail on 0.8.0 until those checks are fixed. The `engine-version` output and the comment footer name the version that ran. Remove the pin, or set it to `latest`, to follow new releases again.
 
 ## Fork PR limitations
 
